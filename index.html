@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ExoHunter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Using a stable, recent Plotly CDN to avoid warnings -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <style>
+        :root {
+            --color-background: #1e1f40;
+            --color-card: #282a50;
+            --color-text: #F0F6FC;
+            --color-dim-text: #8B949E;
+            --color-accent: #22d3ee; /* cyan-400 */
+            --color-border: rgba(139, 148, 158, 0.2);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--color-text);
+            background-color: var(--color-background);
+        }
+       
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--color-background); }
+        ::-webkit-scrollbar-thumb { background: #3d3d6b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #55558b; }
+
+        .card {
+            background-color: var(--color-card);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            border: 1px solid var(--color-border);
+        }
+        
+        .input-table input {
+            background-color: #FFFFFF;
+            border: 1px solid #d1d5db;
+            text-align: center;
+            width: 100%;
+            padding: 4px 2px;
+            border-radius: 4px;
+            color: #000000;
+            font-size: 12px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            border: 1px solid #3d3d6b;
+            border-radius: 0.5rem;
+        }
+        
+        .modal {
+            transition: opacity 0.25s ease;
+        }
+
+        .preview-table {
+            font-size: 10px;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .preview-table th, .preview-table td {
+            border: 1px solid #3d3d6b;
+            padding: 2px 4px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 75px;
+        }
+        .preview-table th {
+            background-color: #3d3d6b;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <header class="flex items-center justify-between p-4 border-b border-[var(--color-border)] bg-[var(--color-card)] sticky top-0 z-20">
+        <div class="flex items-center space-x-3">
+            <i data-lucide="sparkles" class="w-6 h-6 text-[var(--color-accent)]"></i>
+            <h1 class="text-xl font-semibold">Houston, We Have a Solution</h1>
+        </div>
+        <div class="flex items-center space-x-4">
+            <span class="text-xs text-gray-500 mr-4 hidden sm:block">Model Interface</span>
+            <button onclick="clearData()" class="px-3 py-1 text-sm bg-gray-600 rounded-md hover:bg-gray-700 transition">Reset</button>
+        </div>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-5 gap-6 p-4 md:p-8">
+        <!-- Left Column -->
+        <div class="lg:col-span-2 flex flex-col gap-6">
+            <div class="card">
+                <h2 class="text-lg font-medium mb-4 text-[var(--color-accent)]">Data Input</h2>
+                <div class="flex mb-4 border-b border-[var(--color-border)]">
+                    <button id="tab-csv" onclick="switchInputMode('csv')" class="pb-2 px-4 text-sm font-medium border-b-2 transition">CSV File</button>
+                    <button id="tab-manual" onclick="switchInputMode('manual')" class="pb-2 px-4 text-sm font-medium border-b-2 transition">Manual Table</button>
+                </div>
+
+                <div id="input-csv" class="space-y-4">
+                    <div id="drop-zone" class="flex flex-col items-center justify-center p-8 rounded-lg text-center cursor-pointer bg-black/20 border-2 border-dashed border-gray-600/50 hover:border-[var(--color-accent)]/50 transition">
+                        <i data-lucide="file-up" class="w-8 h-8 mb-2 text-gray-400"></i>
+                        <p class="text-gray-400 text-sm">Drag & Drop or click to upload data (.csv)</p>
+                        <span id="csv-file-name" class="text-xs text-gray-500 mt-1"></span>
+                    </div>
+                    <input type="file" id="csv-input" accept=".csv" class="hidden" onchange="handleCsvFile(event)">
+                    <button onclick="document.getElementById('csv-input').click()" class="w-full py-2 bg-gray-700/50 text-white rounded-lg hover:bg-gray-700 transition">Select File</button>
+                </div>
+
+                <div id="input-manual" class="hidden space-y-4 text-center">
+                    <button onclick="openPredictionModal()" class="w-full py-2 bg-gray-700/50 text-white rounded-lg hover:bg-gray-700 transition">
+                        Open Manual Data Editor
+                    </button>
+                    <div id="prediction-preview-container" class="hidden mt-2 p-2 border border-dashed border-gray-600/50 rounded-lg"></div>
+                </div>
+                <button id="predict-btn" onclick="submitForPrediction()" class="w-full mt-6 py-3 font-semibold rounded-lg bg-[var(--color-accent)]/80 text-white hover:bg-[var(--color-accent)] transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>Start Exoplanet Prediction</button>
+            </div>
+
+            <div class="card">
+                <h2 class="text-md font-medium mb-2 text-[var(--color-accent)]">Process Status</h2>
+                <div class="text-sm h-16 overflow-y-auto">
+                    <p id="current-status" class="text-gray-400">System reset. Waiting for data input.</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="flex items-center space-x-3 mb-4">
+                     <h2 class="text-md font-medium text-[var(--color-accent)]">Contribute Labeled Data</h2>
+                     <span class="text-xs font-semibold bg-gray-700 text-gray-400 px-2 py-1 rounded-full">Coming Soon</span>
+                </div>
+                <div class="flex mb-4 border-b border-[var(--color-border)]">
+                    <button id="tab-contrib-csv" class="pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-gray-400 opacity-50 cursor-not-allowed" disabled>CSV File</button>
+                    <button id="tab-contrib-manual" class="pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-gray-400 opacity-50 cursor-not-allowed" disabled>Manual Table</button>
+                </div>
+                
+                <div id="input-contrib-csv" class="space-y-4">
+                    <input type="file" id="contribution-csv-input" class="hidden" accept=".csv">
+                    <button class="w-full py-2 bg-indigo-600/80 text-white rounded-lg flex items-center justify-center opacity-50 cursor-not-allowed" disabled>
+                        <i data-lucide="upload" class="w-4 h-4 mr-2"></i>Upload for Contribution
+                    </button>
+                    <span id="contribution-file-name" class="text-xs text-gray-500 mt-2 block text-center"></span>
+                </div>
+
+                <div id="input-contrib-manual" class="hidden space-y-4 text-center">
+                    <button class="w-full py-2 bg-indigo-600/80 text-white rounded-lg opacity-50 cursor-not-allowed" disabled>
+                       Open Manual Contribution Editor
+                    </button>
+                    <div id="contribution-preview-container" class="hidden mt-2 p-2 border border-dashed border-gray-600/50 rounded-lg"></div>
+                </div>
+                 <button id="contribute-btn" class="w-full mt-6 py-2 bg-indigo-600/80 text-white rounded-lg opacity-50 cursor-not-allowed" disabled>Submit Contribution</button>
+                 <div id="contribution-status" class="text-center text-xs text-gray-500 mt-2"></div>
+            </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="lg:col-span-3 flex flex-col gap-6">
+            <div class="card">
+                <h2 class="text-lg font-medium mb-4 text-[var(--color-accent)]">Main Prediction Output</h2>
+                <div id="main-result" class="flex flex-col items-center justify-center text-center p-4 rounded-lg bg-black/20 border-2 border-dashed border-gray-600">
+                    <i data-lucide="binary" class="w-10 h-10 mx-auto mb-3 text-gray-500"></i>
+                    <p class="text-xl font-bold text-gray-400">Awaiting Prediction...</p>
+                    <p class="text-sm text-gray-500">Submit data to begin analysis.</p>
+                </div>
+            </div>
+            
+            <div class="card flex flex-col flex-grow">
+                <h2 class="text-lg font-medium mb-4 text-[var(--color-accent)]">Transit Shape Visualization</h2>
+                 <div id="transit-visualization-container" class="flex flex-col flex-grow items-center justify-center text-center p-8 rounded-lg bg-black/20 border-2 border-dashed border-gray-600">
+                    <i data-lucide="area-chart" class="w-10 h-10 mx-auto mb-3 text-gray-500"></i>
+                    <p class="text-sm text-gray-500">A visualization of the transit shape will be generated after a successful prediction.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Prediction Modal -->
+    <div id="prediction-modal" class="modal fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 hidden">
+        <div class="card w-11/12 max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[var(--color-accent)]">Manual Data Input</h2>
+                <button onclick="closePredictionModal()" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <div class="flex justify-between items-center mb-4">
+                <a href="https://exoplanetarchive.ipac.caltech.edu/docs/API_kepcandidate_columns.html" target="_blank" rel="noopener noreferrer" class="text-sm text-cyan-400 hover:text-cyan-300 underline flex items-center">
+                    <i data-lucide="book-marked" class="w-4 h-4 mr-1"></i>
+                    Column Definitions Guide
+                </a>
+                <div class="flex items-center space-x-2">
+                    <!-- <button onclick="addPredictionRow()" class="px-3 py-1 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition flex items-center"><i data-lucide="plus" class="w-4 h-4 mr-1"></i>Add Row</button> -->
+                </div>
+            </div>
+            <div class="table-container flex-grow">
+                <table class="w-full text-sm input-table">
+                    <thead id="prediction-data-head"></thead>
+                    <tbody id="prediction-data-body"></tbody>
+                </table>
+            </div>
+             <button onclick="closePredictionModal()" class="w-full mt-6 py-2 bg-[var(--color-accent)]/80 text-white rounded-lg hover:bg-[var(--color-accent)] transition">Done</button>
+        </div>
+    </div>
+
+    <!-- Contribution Modal -->
+    <div id="contribution-modal" class="modal fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 hidden">
+        <div class="card w-11/12 max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-medium text-[var(--color-accent)]">Manual Labeled Data Contribution</h2>
+                <button onclick="closeContributionModal()" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+             <div class="flex justify-between items-center mb-4">
+                <a href="https://exoplanetarchive.ipac.caltech.edu/docs/API_kepcandidate_columns.html" target="_blank" rel="noopener noreferrer" class="text-sm text-cyan-400 hover:text-cyan-300 underline flex items-center">
+                    <i data-lucide="book-marked" class="w-4 h-4 mr-1"></i>
+                    Column Definitions Guide
+                </a>
+                 <div class="flex items-center space-x-2">
+                    <!-- <button onclick="addTrainingRow()" class="px-3 py-1 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition flex items-center"><i data-lucide="plus" class="w-4 h-4 mr-1"></i>Add Row</button> -->
+                </div>
+            </div>
+            <div class="table-container flex-grow">
+                <table class="w-full text-sm input-table">
+                    <thead id="training-data-head"></thead>
+                    <tbody id="training-data-body"></tbody>
+                </table>
+            </div>
+            <button onclick="closeContributionModal()" class="w-full mt-6 py-2 bg-indigo-600/80 text-white rounded-lg hover:bg-indigo-600 transition">Done</button>
+        </div>
+    </div>
+    
+    <script>
+        // --- STATE AND CONSTANTS ---
+        let currentInputMode = 'csv';
+        let currentContributionMode = 'csv';
+        let predictionCsvFile = null;
+        let trainingCsvFile = null;
+        const sharedColumns = ['kepid', 'kepoi_name', 'koi_fpflag_nt', 'koi_fpflag_ss', 'koi_fpflag_co', 'koi_fpflag_ec', 'koi_period', 'koi_time0bk', 'koi_impact', 'koi_duration', 'koi_depth', 'koi_prad', 'koi_teq', 'koi_insol', 'koi_model_snr', 'koi_tce_plnt_num', 'koi_steff', 'koi_slogg', 'koi_srad', 'ra', 'dec', 'koi_kepmag'];
+        
+        const contributionColumns = [...sharedColumns];
+        contributionColumns.splice(2, 0, 'koi_score');
+
+
+        // --- LIVE API URL ---
+        // Your live Ngrok URL has been injected here.
+        const BASE_API_URL = "https://gastronomical-stichometric-jannie.ngrok-free.dev/api";
+        const API_TIMEOUT = 15000; // 15 seconds timeout
+
+        // --- DOM ELEMENTS ---
+        const predictBtn = document.getElementById('predict-btn');
+        const contributeBtn = document.getElementById('contribute-btn');
+        const statusLog = document.getElementById('current-status');
+        const mainResultDiv = document.getElementById('main-result');
+        const dropZone = document.getElementById('drop-zone');
+        const predictionTableBody = document.getElementById('prediction-data-body');
+        const trainingTableBody = document.getElementById('training-data-body');
+        const predictionModal = document.getElementById('prediction-modal');
+        const contributionModal = document.getElementById('contribution-modal');
+        const predictionPreviewContainer = document.getElementById('prediction-preview-container');
+        const contributionPreviewContainer = document.getElementById('contribution-preview-container');
+        const transitVizContainer = document.getElementById('transit-visualization-container');
+
+
+        // --- INITIALIZATION ---
+        window.onload = () => {
+            lucide.createIcons();
+            createTableHeader(sharedColumns, document.getElementById('prediction-data-head'));
+            createTableHeader(contributionColumns, document.getElementById('training-data-head'));
+            clearData();
+            setupDragAndDrop();
+        };
+
+        // --- MODAL CONTROLS ---
+        function openPredictionModal() { predictionModal.classList.remove('hidden'); }
+        function closePredictionModal() {
+            predictionModal.classList.add('hidden');
+            updateTablePreview(predictionTableBody, predictionPreviewContainer, sharedColumns);
+            checkPredictionDataValidity();
+        }
+        function openContributionModal() { /* Modal is disabled */ }
+        function closeContributionModal() {
+            contributionModal.classList.add('hidden');
+            updateTablePreview(trainingTableBody, contributionPreviewContainer, contributionColumns);
+            // checkContributionDataValidity(); // Not needed as it's disabled
+        }
+
+        // --- UI AND INPUT HANDLING ---
+        function switchInputMode(mode) {
+            currentInputMode = mode;
+            const tabCsv = document.getElementById('tab-csv');
+            const tabManual = document.getElementById('tab-manual');
+            const inputCsvDiv = document.getElementById('input-csv');
+            const inputManualDiv = document.getElementById('input-manual');
+            
+            // Tab styling logic
+            const activeClasses = ['border-[var(--color-accent)]', 'text-[var(--color-accent)]'];
+            const inactiveClasses = ['border-transparent', 'text-gray-400'];
+            
+            if (mode === 'csv') {
+                tabCsv.classList.add(...activeClasses);
+                tabCsv.classList.remove(...inactiveClasses);
+                tabManual.classList.remove(...activeClasses);
+                tabManual.classList.add(...inactiveClasses);
+                inputCsvDiv.classList.remove('hidden');
+                inputManualDiv.classList.add('hidden');
+            } else { // manual
+                tabManual.classList.add(...activeClasses);
+                tabManual.classList.remove(...inactiveClasses);
+                tabCsv.classList.remove(...activeClasses);
+                tabCsv.classList.add(...inactiveClasses);
+                inputCsvDiv.classList.add('hidden');
+                inputManualDiv.classList.remove('hidden');
+                if (predictionTableBody.rows.length === 0) addPredictionRow();
+            }
+            checkPredictionDataValidity();
+        }
+        
+        function switchContributionMode(mode) {
+            // This functionality is disabled.
+        }
+
+        function handleCsvFile(event) {
+            predictionCsvFile = event.target.files[0];
+            document.getElementById('csv-file-name').textContent = predictionCsvFile ? predictionCsvFile.name : '';
+            if (predictionCsvFile) updateStatus(`File selected: ${predictionCsvFile.name}`, 'text-gray-400');
+            checkPredictionDataValidity();
+        }
+
+        function handleContributionCsvFile(event) {
+            // This functionality is disabled.
+        }
+        
+        function setupDragAndDrop() {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); });
+            });
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.add('border-[var(--color-accent)]'));
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.remove('border-[var(--color-accent)]'));
+            });
+            dropZone.addEventListener('drop', e => {
+                const dt = e.dataTransfer;
+                document.getElementById('csv-input').files = dt.files;
+                handleCsvFile({ target: document.getElementById('csv-input') });
+            });
+            dropZone.addEventListener('click', () => {
+                document.getElementById('csv-input').click();
+            });
+        }
+        
+        // --- DYNAMIC TABLE & PREVIEW LOGIC ---
+        function updateTablePreview(sourceTbody, previewContainer, columns) {
+            const rows = Array.from(sourceTbody.rows).filter(row => 
+                Array.from(row.querySelectorAll('input')).some(input => input.value.trim() !== '')
+            );
+
+            if (rows.length === 0) {
+                previewContainer.classList.add('hidden');
+                return;
+            }
+
+            const maxPreviewRows = 3;
+            const maxPreviewCols = 4;
+            let html = `<p class="text-xs text-gray-400 mb-1">Showing ${Math.min(rows.length, maxPreviewRows)} of ${rows.length} entered rows:</p>`;
+            html += `<table class="preview-table"><thead><tr>`;
+            for (let i = 0; i < Math.min(columns.length, maxPreviewCols); i++) { html += `<th>${columns[i]}</th>`; }
+            if (columns.length > maxPreviewCols) html += `<th>...</th>`;
+            html += `</tr></thead><tbody>`;
+
+            for (let i = 0; i < Math.min(rows.length, maxPreviewRows); i++) {
+                const row = rows[i];
+                html += `<tr>`;
+                const inputs = row.querySelectorAll('input');
+                for (let j = 0; j < Math.min(inputs.length, maxPreviewCols); j++) { html += `<td>${inputs[j].value || '-'}</td>`; }
+                if (inputs.length > maxPreviewCols) html += `<td>...</td>`;
+                html += `</tr>`;
+            }
+            html += `</tbody></table>`;
+            
+            previewContainer.innerHTML = html;
+            previewContainer.classList.remove('hidden');
+        }
+
+        function createTableHeader(columns, parentElement) {
+            parentElement.innerHTML = '';
+            const headerRow = parentElement.insertRow();
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.className = 'px-2 py-2 bg-slate-800 text-xs font-normal sticky top-0';
+                th.textContent = col;
+                headerRow.appendChild(th);
+            });
+        }
+
+        function addPredictionRow() { addRow(predictionTableBody, sharedColumns, checkPredictionDataValidity); }
+        function addTrainingRow() { addRow(trainingTableBody, contributionColumns, ()=>{}); }
+
+        function addRow(tbody, columns, validator) {
+            const row = tbody.insertRow();
+            row.className = "hover:bg-slate-700/50";
+            let cells = columns.map(() => `<td><input type="text" placeholder="..." oninput="${validator.name}()"></td>`).join('');
+            row.innerHTML = cells;
+            lucide.createIcons();
+            validator();
+        }
+
+        function removeLastPredictionRow() {
+            if (predictionTableBody.rows.length > 0) {
+                predictionTableBody.deleteRow(-1);
+                checkPredictionDataValidity();
+            }
+        }
+        function removeLastTrainingRow() {
+            // Disabled
+        }
+        
+        function deleteRow(btn) {
+            // This function is only for the prediction table now
+            const tbody = btn.closest('tbody');
+            btn.closest('tr').remove();
+            if (tbody.id === 'prediction-data-body') checkPredictionDataValidity();
+        }
+
+        // --- VALIDATION ---
+        function isTableWithData(tbody) { return Array.from(tbody.rows).some(row => Array.from(row.querySelectorAll('input')).some(input => input.value.trim() !== '')); }
+        function checkPredictionDataValidity() {
+            predictBtn.disabled = !((currentInputMode === 'csv' && !!predictionCsvFile) || (currentInputMode === 'manual' && isTableWithData(predictionTableBody)));
+        }
+        function checkContributionDataValidity() {
+           // Disabled
+        }
+
+        // --- DATA SUBMISSION ---
+        async function submitForPrediction() {
+            predictBtn.disabled = true;
+            predictBtn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 mx-auto animate-spin"></i>`;
+            lucide.createIcons();
+            updateStatus('Sending data to prediction model...', 'text-yellow-400');
+            mainResultDiv.innerHTML = `<i data-lucide="loader-2" class="w-10 h-10 mx-auto mb-3 text-gray-500 animate-spin"></i><p class="text-xl font-bold text-gray-400">Analyzing...</p>`;
+            transitVizContainer.innerHTML = `<div class="flex items-center justify-center space-x-2 text-yellow-400"><i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i><p class="text-sm">Generating Plot...</p></div>`;
+            lucide.createIcons();
+
+            let targetUrl;
+            let options;
+
+            try {
+                if (currentInputMode === 'csv') {
+                    targetUrl = `${BASE_API_URL}/predict_csv`;
+                    const formData = new FormData();
+                    formData.append('file', predictionCsvFile);
+                    options = { method: 'POST', body: formData };
+                } else {
+                    targetUrl = `${BASE_API_URL}/predict_json`;
+                    const manualData = Array.from(predictionTableBody.rows).map(row => {
+                        const rowData = {};
+                        row.querySelectorAll('input').forEach((input, index) => { if (sharedColumns[index]) rowData[sharedColumns[index]] = input.value; });
+                        return rowData;
+                    });
+                     options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: manualData }) };
+                }
+
+                // API call with a timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+
+                const response = await fetch(targetUrl, {...options, signal: controller.signal});
+                clearTimeout(timeoutId); // Clear timeout if fetch succeeds within time
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server Error (${response.status}): ${errorText.substring(0, 100)}...`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+
+                displayPredictionResult(result);
+
+            } catch (error) {
+                console.error("Prediction failed:", error);
+                
+                let errorMessage = "Connection to server failed. Check if your Flask server is running and accessible.";
+                if (error.name === 'AbortError') {
+                    errorMessage = "Request timed out. The server might be running but too slow.";
+                } else if (error.message.includes("Server Error")) {
+                    errorMessage = `Server processing error: ${error.message}`;
+                } else if (error.message) {
+                    errorMessage = `Error: ${error.message}`;
+                }
+
+                updateStatus(errorMessage, 'text-red-400');
+                mainResultDiv.innerHTML = `<i data-lucide="server-crash" class="w-10 h-10 mx-auto mb-3 text-red-400"></i><p class="text-xl font-bold text-red-400">Prediction Failed</p><p class="text-sm text-gray-500">${errorMessage}</p>`;
+                transitVizContainer.innerHTML = `<i data-lucide="skull" class="w-10 h-10 mx-auto mb-3 text-red-400"></i><p class="text-sm text-gray-500">Visualization failed due to API error.</p>`;
+                lucide.createIcons();
+            } finally {
+                predictBtn.disabled = false;
+                predictBtn.textContent = 'Start Exoplanet Prediction';
+                lucide.createIcons();
+            }
+        }
+        
+        async function submitContributionData() {
+            // Disabled
+        }
+
+        // --- DISPLAY & UI UPDATE ---
+        function updateStatus(message, colorClass) { statusLog.className = `${colorClass} text-sm`; statusLog.textContent = message; }
+        
+        // function displayPredictionResult(result) {
+        //     const isConfirmed = result.exoplanet === 'yes';
+        //     const confidence = result.confidence || 0.0;
+        //     const plotBase64 = result.plot_base64; // Base64 image string from Flask
+
+        //     const statusColor = isConfirmed ? 'text-emerald-400' : 'text-orange-400';
+        //     const statusIcon = isConfirmed ? 'check-circle-2' : 'x-circle';
+        //     const statusText = isConfirmed ? 'EXOPLANET CANDIDATE CONFIRMED' : 'FALSE POSITIVE DETECTED';
+        function displayPredictionResult(result) {
+            const isConfirmed = result.classification === 'CONFIRMED';
+            const confidence = result.koi_score || 0.0;
+            const plotBase64 = result.plot_base64;
+
+            const statusColor = isConfirmed ? 'text-emerald-400' : 'text-orange-400';
+            const statusIcon = isConfirmed ? 'check-circle-2' : 'x-circle';
+            const statusText = isConfirmed ? 'EXOPLANET CANDIDATE CONFIRMED' : 'FALSE POSITIVE DETECTED';
+            
+            // 1. Update Main Result Div
+            mainResultDiv.innerHTML = `
+                <i data-lucide="${statusIcon}" class="w-16 h-16 mx-auto mb-4 ${statusColor}"></i>
+                <p class="text-2xl font-bold ${statusColor}">${statusText}</p>
+                <p class="text-lg text-white mt-2">Model Confidence: <span class="font-semibold text-[var(--color-accent)]">${(confidence * 100).toFixed(2)}%</span></p>
+                <p class="text-sm text-gray-500 mt-1">${result.message || ''}</p>
+            `;
+
+            // 2. Update Visualization Container
+            if (plotBase64) {
+                 transitVizContainer.innerHTML = `
+                    <img src="data:image/png;base64,${plotBase64}" 
+                         alt="Generated Transit Plot" 
+                         style="max-width: 100%; height: auto; border-radius: 8px; background-color: white; padding: 10px;"
+                    />
+                `;
+            } else {
+                 transitVizContainer.innerHTML = `<i data-lucide="area-chart" class="w-10 h-10 mx-auto mb-3 text-gray-500"></i><p class="text-sm text-gray-500">Plot data not received from server.</p>`;
+            }
+
+
+            updateStatus(`Analysis Complete: ${statusText}`, statusColor);
+            predictBtn.disabled = false;
+            predictBtn.textContent = 'Start Exoplanet Prediction';
+            lucide.createIcons();
+        }
+
+
+        // --- RESET ---
+        function clearContributionData() {
+            // Section is disabled, but we can clear the internal state just in case.
+            trainingCsvFile = null;
+            document.getElementById('contribution-csv-input').value = '';
+            document.getElementById('contribution-file-name').textContent = '';
+            trainingTableBody.innerHTML = '';
+            contributionPreviewContainer.classList.add('hidden');
+            document.getElementById('contribution-status').textContent = '';
+            closeContributionModal();
+        }
+        function clearData() {
+            predictionCsvFile = null;
+            document.getElementById('csv-input').value = '';
+            document.getElementById('csv-file-name').textContent = '';
+            predictionTableBody.innerHTML = '';
+            predictionPreviewContainer.classList.add('hidden');
+            mainResultDiv.innerHTML = `<i data-lucide="binary" class="w-10 h-10 mx-auto mb-3 text-gray-500"></i><p class="text-xl font-bold text-gray-400">Awaiting Prediction...</p><p class="text-sm text-gray-500">Submit data to begin analysis.</p>`;
+            transitVizContainer.innerHTML = `<i data-lucide="area-chart" class="w-10 h-10 mx-auto mb-3 text-gray-500"></i><p class="text-sm text-gray-500">A visualization of the transit shape will be generated after a successful prediction.</p>`;
+
+            predictBtn.textContent = 'Start Exoplanet Prediction';
+            updateStatus('System reset. Waiting for data input.', 'text-gray-400');
+            
+            // Set initial tab styles on clear
+            document.getElementById('tab-csv').classList.add('border-[var(--color-accent)]', 'text-[var(--color-accent)]');
+            document.getElementById('tab-manual').classList.remove('border-[var(--color-accent)]', 'text-[var(--color-accent)]');
+            document.getElementById('tab-manual').classList.add('border-transparent', 'text-gray-400');
+
+            switchInputMode('csv');
+            closePredictionModal();
+            clearContributionData();
+            lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
+
